@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>¿Quién dijo qué?</title>
+<style>
+  :root { --bg:#12101c; --card:#1e1b2e; --card2:#2a2644; --text:#f4f1ff; --muted:#a49fc4; --accent:#ff4d8d; --accent2:#7c5cff; --ok:#3ddc97; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+  .view[hidden] { display:none; }
+  h1 { font-size: 2.2rem; margin: 8px 0 4px; }
+  h2 { margin: 0 0 12px; }
+  p { color: var(--muted); line-height: 1.4; }
+  .card { background: var(--card); border-radius: 16px; padding: 18px; margin: 14px 0; }
+  .big-answer { font-size: 1.5rem; font-weight: 700; line-height: 1.3; background: var(--card2); border-radius: 14px; padding: 18px; margin: 12px 0; word-break: break-word; }
+  .question { color: var(--muted); font-size: 1.05rem; }
+  .code { font-size: 4rem; font-weight: 900; letter-spacing: .35em; text-align: center; margin: 4px 0; color: var(--accent); }
+  .center { text-align: center; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 14px; padding: 14px 18px; background: linear-gradient(135deg,var(--accent),var(--accent2)); color: #fff; cursor: pointer; width: 100%; margin-top: 10px; }
+  button.secondary { background: var(--card2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input, textarea { font: inherit; width: 100%; padding: 14px; border-radius: 12px; border: 2px solid var(--card2); background: var(--card); color: var(--text); margin-top: 8px; }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent2); }
+  #in-code { text-transform: uppercase; text-align: center; letter-spacing: .3em; font-size: 1.6rem; }
+  textarea { min-height: 120px; resize: vertical; }
+  .err { color: var(--bad); min-height: 1.2em; }
+  .players { display:flex; flex-wrap:wrap; gap:8px; margin: 10px 0; }
+  .chip { background: var(--card2); border-radius: 999px; padding: 8px 14px; font-weight: 600; }
+  .chip.off { opacity: .4; }
+  .vote-btn { background: var(--card2); }
+  .vote-btn.picked { background: linear-gradient(135deg,var(--accent),var(--accent2)); }
+  .timer { font-size: 1.4rem; font-weight: 800; color: var(--accent); }
+  .row { display:flex; justify-content: space-between; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--card2); gap: 8px; }
+  .row:last-child { border-bottom: 0; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .pts { font-weight: 800; color: var(--ok); }
+  .banner { background: linear-gradient(135deg,var(--accent2),var(--accent)); border-radius: 12px; padding: 12px; font-weight: 800; text-align:center; margin: 10px 0; }
+  .qr { display:block; margin: 12px auto; background:#fff; padding: 10px; border-radius: 14px; width: 240px; height: 240px; }
+  .small { font-size: .85rem; word-break: break-all; }
+  .medal { width: 2rem; display:inline-block; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--card2); padding: 12px 18px; border-radius: 12px; display:none; max-width: 90%; text-align:center; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ============ HOME ============ -->
+  <section id="v-home" class="view">
+    <h1>🕵️ ¿Quién dijo qué?</h1>
+    <p>Responde preguntas personales desde el móvil y adivina quién escribió cada respuesta.</p>
+    <div class="card">
+      <button id="btn-create">📺 Crear sala (esta pantalla será el host)</button>
+      <button id="btn-goJoin" class="secondary">📱 Unirme con un código</button>
+    </div>
+  </section>
+
+  <!-- ============ JOIN (móvil) ============ -->
+  <section id="v-join" class="view" hidden>
+    <h1>Unirse a la sala</h1>
+    <div class="card">
+      <label>Código de sala</label>
+      <input id="in-code" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD">
+      <label style="display:block;margin-top:12px">Tu nombre</label>
+      <input id="in-name" maxlength="14" autocomplete="off" placeholder="Ej: Lucía">
+      <div id="join-err" class="err"></div>
+      <button id="btn-join">¡Entrar!</button>
+      <button id="btn-joinBack" class="secondary">Volver</button>
+    </div>
+  </section>
+
+  <!-- ============ HOST: LOBBY ============ -->
+  <section id="v-host-lobby" class="view" hidden>
+    <div class="center">
+      <p style="margin:0">Escanea el QR o entra con el código</p>
+      <div class="code" id="h-code">----</div>
+      <img id="h-qr" class="qr" alt="Código QR de la sala">
+      <div class="small" id="h-url"></div>
+    </div>
+    <div class="card">
+      <h2>Jugadores (<span id="h-count">0</span>/8)</h2>
+      <div class="players" id="h-players"></div>
+      <button id="btn-start" disabled>Empezar partida</button>
+      <div id="h-start-err" class="err"></div>
+      <p class="small">Mínimo 3 jugadores, máximo 8.</p>
+    </div>
+  </section>
+
+  <!-- ============ HOST: RESPONDIENDO ============ -->
+  <section id="v-host-answering" class="view" hidden>
+    <h1>✍️ Respondiendo…</h1>
+    <p>Los jugadores están contestando las preguntas desde su móvil.</p>
+    <div class="card">
+      <div class="players" id="h-ans-players"></div>
+      <button id="btn-skipwait" class="secondary">Continuar sin esperar a los que faltan</button>
+    </div>
+  </section>
+
+  <!-- ============ HOST: VOTACIÓN ============ -->
+  <section id="v-host-vote" class="view" hidden>
+    <div class="row"><span id="hv-index" class="question"></span><span class="timer" id="hv-timer"></span></div>
+    <div class="question" id="hv-question"></div>
+    <div class="big-answer" id="hv-answer"></div>
+    <p class="center">🗳️ Han votado <b id="hv-votes">0</b> de <b id="hv-needed">0</b></p>
+    <button id="btn-closevote" class="secondary">Cerrar votación ya</button>
+  </section>
+
+  <!-- ============ HOST: RESULTADO ============ -->
+  <section id="v-host-result" class="view" hidden>
+    <div class="question" id="hr-question"></div>
+    <div class="big-answer" id="hr-answer"></div>
+    <h2 class="center">Lo escribió <span style="color:var(--accent)" id="hr-author"></span></h2>
+    <div id="hr-banner"></div>
+    <div class="card" id="hr-votes"></div>
+    <div class="card"><h2>Marcador</h2><div id="hr-scores"></div></div>
+    <button id="btn-next">Siguiente ▶</button>
+  </section>
+
+  <!-- ============ FINAL (host y jugadores) ============ -->
+  <section id="v-over" class="view" hidden>
+    <h1 class="center">🏆 ¡Fin de la partida!</h1>
+    <div class="card" id="over-ranking"></div>
+    <button id="btn-again" hidden>Jugar otra vez</button>
+  </section>
+
+  <!-- ============ JUGADOR: ESPERA ============ -->
+  <section id="v-p-wait" class="view" hidden>
+    <h1 id="pw-title">¡Estás dentro! 🎉</h1>
+    <p id="pw-msg"></p>
+    <div class="card"><div class="players" id="pw-players"></div></div>
+  </section>
+
+  <!-- ============ JUGADOR: RESPONDER ============ -->
+  <section id="v-p-answer" class="view" hidden>
+    <p id="pa-progress" style="margin-bottom:0"></p>
+    <h2 id="pa-question" style="margin-top:6px"></h2>
+    <textarea id="pa-input" maxlength="140" placeholder="Tu respuesta (anónima)…"></textarea>
+    <div class="err" id="pa-err"></div>
+    <button id="btn-pa-next">Siguiente</button>
+  </section>
+
+  <!-- ============ JUGADOR: VOTAR ============ -->
+  <section id="v-p-vote" class="view" hidden>
+    <div class="row"><span id="pv-index" class="question"></span><span class="timer" id="pv-timer"></span></div>
+    <div class="question" id="pv-question"></div>
+    <div class="big-answer" id="pv-answer"></div>
+    <p id="pv-msg"></p>
+    <div id="pv-options"></div>
+  </section>
+
+  <!-- ============ JUGADOR: RESULTADO ============ -->
+  <section id="v-p-result" class="view" hidden>
+    <h1 class="center" id="pr-title"></h1>
+    <p class="center" id="pr-sub"></p>
+    <p class="center pts" id="pr-pts" style="font-size:2rem;margin:0"></p>
+    <div class="card"><h2>Marcador</h2><div id="pr-scores"></div></div>
+  </section>
+
+</main>
+<div id="toast"></div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+/* ============================================================
+   CONFIG — cambia PROD_BACKEND por la URL de tu servicio en Render.
+   En local (puerto 3000) usa el mismo origen que sirve el backend.
+   ============================================================ */
+const PROD_BACKEND = 'https://TU-BACKEND.onrender.com';
+const BACKEND_URL = location.port === '3000' ? location.origin : PROD_BACKEND;
+
+const socket = io(BACKEND_URL);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const show = (id) => document.querySelectorAll('.view').forEach((v) => (v.hidden = v.id !== id));
+const medals = ['🥇', '🥈', '🥉'];
+
+let role = null;          // 'host' | 'player'
+let state = null;         // último room:state
+let hostSession = null;   // {code, hostKey}
+let myName = null, joinedCode = null;
+let questions = [], qIdx = 0, answers = [], submitted = false;
+let timerInt = null;
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.style.display = 'none'), 3500);
+}
+function startCountdown(el, ms) {
+  clearInterval(timerInt);
+  const end = Date.now() + ms;
+  const tick = () => { el.textContent = Math.max(0, Math.ceil((end - Date.now()) / 1000)) + 's'; };
+  tick(); timerInt = setInterval(tick, 250);
+}
+function scoresHTML(list, delta = {}) {
+  return list.map((p, i) => `<div class="row"><span><span class="medal">${medals[i] || (i + 1) + '.'}</span>${esc(p.name)}</span>
+    <span><b>${p.score}</b> ${delta[p.id] ? `<span class="pts">+${delta[p.id]}</span>` : ''}</span></div>`).join('');
+}
+
+/* ───────────── Conexión / reconexión ───────────── */
+socket.on('connect', () => {
+  if (role === 'host' && hostSession) return rejoinHost();
+  if (!role) {
+    const saved = sessionStorage.getItem('hostSession');
+    if (saved) { hostSession = JSON.parse(saved); role = 'host'; rejoinHost(); }
+  } else if (role === 'player' && joinedCode) {
+    socket.emit('player:join', { code: joinedCode, name: myName }, (res) => {
+      if (!res.ok) { role = null; joinedCode = null; show('v-home'); toast('Te desconectaste durante la partida. Vuelve a unirte cuando acabe.'); }
+    });
+  }
+});
+function rejoinHost() {
+  socket.emit('host:rejoin', hostSession, (res) => {
+    if (!res.ok) { sessionStorage.removeItem('hostSession'); hostSession = null; role = null; show('v-home'); }
+  });
+}
+socket.on('room:closed', ({ reason }) => { sessionStorage.removeItem('hostSession'); alert(reason || 'La sala se ha cerrado'); location.href = location.pathname; });
+socket.on('game:aborted', ({ reason }) => toast(reason));
+
+/* ───────────── HOME / JOIN ───────────── */
+$('btn-create').onclick = () => {
+  socket.emit('host:create', {}, (res) => {
+    if (!res.ok) return toast(res.error || 'Error al crear la sala');
+    role = 'host';
+    hostSession = { code: res.code, hostKey: res.hostKey };
+    sessionStorage.setItem('hostSession', JSON.stringify(hostSession));
+    state = { code: res.code, phase: 'lobby', players: [] };
+    renderHostLobby();
+  });
+};
+$('btn-goJoin').onclick = () => show('v-join');
+$('btn-joinBack').onclick = () => show('v-home');
+$('in-name').value = localStorage.getItem('playerName') || '';
+
+$('btn-join').onclick = () => {
+  const code = $('in-code').value.trim().toUpperCase();
+  const name = $('in-name').value.trim();
+  $('join-err').textContent = '';
+  socket.emit('player:join', { code, name }, (res) => {
+    if (!res.ok) return ($('join-err').textContent = res.error);
+    role = 'player'; myName = name; joinedCode = res.code;
+    localStorage.setItem('playerName', name);
+    showPlayerWait('Esperando a que el host empiece la partida…');
+  });
+};
+// Código precargado al escanear el QR: https://tu-web/?room=ABCD
+const roomParam = new URLSearchParams(location.search).get('room');
+if (roomParam) { $('in-code').value = roomParam.toUpperCase().slice(0, 4); show('v-join'); $('in-name').focus(); }
+
+/* ───────────── room:state ───────────── */
+socket.on('room:state', (s) => {
+  state = s;
+  if (role === 'host') {
+    if (s.phase === 'lobby') renderHostLobby();
+    if (s.phase === 'answering') renderHostAnswering();
+  } else if (role === 'player') {
+    if (s.phase === 'lobby') { submitted = false; showPlayerWait('Esperando a que el host empiece la partida…'); }
+    if (s.phase === 'answering' && submitted) {
+      const done = s.players.filter((p) => p.answered).length;
+      showPlayerWait(`¡Respuestas enviadas! Esperando al resto (${done}/${s.players.length})…`, false);
+    }
+  }
+});
+
+/* ───────────── HOST ───────────── */
+function renderHostLobby() {
+  show('v-host-lobby');
+  const joinUrl = `${location.origin}${location.pathname}?room=${state.code}`;
+  $('h-code').textContent = state.code;
+  $('h-url').textContent = joinUrl;
+  // QR generado con la API pública (no requiere librerías)
+  $('h-qr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data=' + encodeURIComponent(joinUrl);
+  const online = state.players.filter((p) => p.connected);
+  $('h-count').textContent = online.length;
+  $('h-players').innerHTML = state.players.map((p) => `<span class="chip ${p.connected ? '' : 'off'}">${esc(p.name)}</span>`).join('') || '<span class="question">Aún no hay nadie…</span>';
+  $('btn-start').disabled = online.length < 3 || online.length > 8;
+}
+$('btn-start').onclick = () => socket.emit('host:start', {}, (res) => { $('h-start-err').textContent = res.ok ? '' : res.error; });
+
+function renderHostAnswering() {
+  show('v-host-answering');
+  $('h-ans-players').innerHTML = state.players.map((p) => `<span class="chip ${p.connected ? '' : 'off'}">${p.answered ? '✅' : '⏳'} ${esc(p.name)}</span>`).join('');
+}
+$('btn-skipwait').onclick = () => socket.emit('host:skipWaiting');
+$('btn-closevote').onclick = () => socket.emit('host:next');
+$('btn-next').onclick = () => socket.emit('host:next');
+$('btn-again').onclick = () => socket.emit('host:playAgain');
+
+socket.on('game:answering', (p) => {
+  if (role === 'host') return renderHostAnswering();
+  if (role !== 'player') return;
+  questions = p.questions; qIdx = 0; answers = []; submitted = false;
+  renderQuestion();
+});
+
+socket.on('game:voteProgress', ({ votesIn, votesNeeded }) => {
+  $('hv-votes').textContent = votesIn; $('hv-needed').textContent = votesNeeded;
+});
+
+/* ───────────── JUGADOR: responder ───────────── */
+function renderQuestion() {
+  show('v-p-answer');
+  $('pa-progress').textContent = `Pregunta ${qIdx + 1} de ${questions.length}`;
+  $('pa-question').textContent = questions[qIdx];
+  $('pa-input').value = '';
+  $('pa-err').textContent = '';
+  $('btn-pa-next').textContent = qIdx === questions.length - 1 ? 'Enviar respuestas ✅' : 'Siguiente ▶';
+  $('pa-input').focus();
+}
+$('btn-pa-next').onclick = () => {
+  const val = $('pa-input').value.trim();
+  if (!val) return ($('pa-err').textContent = 'Escribe algo, ¡no seas tímido!');
+  answers[qIdx] = val;
+  if (qIdx < questions.length - 1) { qIdx++; return renderQuestion(); }
+  $('btn-pa-next').disabled = true;
+  socket.emit('player:submitAnswers', { answers }, (res) => {
+    $('btn-pa-next').disabled = false;
+    if (!res.ok) return ($('pa-err').textContent = res.error);
+    submitted = true;
+    showPlayerWait('¡Respuestas enviadas! Esperando al resto…', false);
+  });
+};
+function showPlayerWait(msg, showPlayers = true) {
+  show('v-p-wait');
+  $('pw-msg').textContent = msg;
+  $('pw-title').textContent = showPlayers ? '¡Estás dentro! 🎉' : '⏳ Un momento…';
+  $('pw-players').innerHTML = showPlayers && state ? state.players.map((p) => `<span class="chip ${p.connected ? '' : 'off'}">${esc(p.name)}</span>`).join('') : '';
+}
+
+/* ───────────── Ronda de votación ───────────── */
+socket.on('game:item', (it) => {
+  if (role === 'host') {
+    show('v-host-vote');
+    $('hv-index').textContent = `Respuesta ${it.index} de ${it.total}`;
+    $('hv-question').textContent = it.question;
+    $('hv-answer').textContent = '“' + it.answer + '”';
+    $('hv-votes').textContent = 0; $('hv-needed').textContent = it.votesNeeded;
+    startCountdown($('hv-timer'), it.remainingMs);
+    return;
+  }
+  if (role !== 'player') return;
+  show('v-p-vote');
+  $('pv-index').textContent = `Respuesta ${it.index} de ${it.total}`;
+  $('pv-question').textContent = it.question;
+  $('pv-answer').textContent = '“' + it.answer + '”';
+  startCountdown($('pv-timer'), it.remainingMs);
+  const box = $('pv-options');
+  if (it.isMine) {
+    $('pv-msg').textContent = '😏 ¡Esta respuesta es tuya! Tu voto cuenta como auto-voto y no puntúa. Haz como si nada.';
+    box.innerHTML = '<button class="vote-btn" id="btn-auto">Confirmar (auto-voto)</button>';
+    $('btn-auto').onclick = (e) => sendVote(socket.id, e.target);
+  } else {
+    $('pv-msg').textContent = '¿Quién crees que lo escribió?';
+    box.innerHTML = it.candidates.map((c) => `<button class="vote-btn" data-id="${esc(c.id)}">${esc(c.name)}</button>`).join('');
+    box.querySelectorAll('button').forEach((b) => (b.onclick = () => sendVote(b.dataset.id, b)));
+  }
+});
+function sendVote(targetId, btn) {
+  socket.emit('player:vote', { targetId }, (res) => {
+    if (!res.ok) return toast(res.error);
+    $('pv-options').querySelectorAll('button').forEach((b) => (b.disabled = true));
+    btn.classList.add('picked');
+    $('pv-msg').textContent = res.auto ? 'Auto-voto registrado. Esperando al resto…' : '¡Voto enviado! Esperando al resto…';
+  });
+}
+
+/* ───────────── Resultado de la ronda ───────────── */
+socket.on('game:result', (r) => {
+  clearInterval(timerInt);
+  if (role === 'host') {
+    show('v-host-result');
+    $('hr-question').textContent = r.question;
+    $('hr-answer').textContent = '“' + r.answer + '”';
+    $('hr-author').textContent = r.author.name;
+    $('hr-banner').innerHTML = r.fooledAll ? `<div class="banner">😈 ¡${esc(r.author.name)} ha engañado a todos! +150</div>` : '';
+    $('hr-votes').innerHTML = r.votes.length
+      ? r.votes.map((v) => v.auto
+          ? `<div class="row"><span>${esc(v.voterName)}</span><span class="question">auto-voto (no puntúa)</span></div>`
+          : `<div class="row"><span>${esc(v.voterName)} → ${esc(v.targetName)}</span><span class="${v.correct ? 'ok' : 'bad'}">${v.correct ? '✔ +100' : '✘'}</span></div>`).join('')
+      : '<span class="question">Nadie votó a tiempo</span>';
+    $('hr-scores').innerHTML = scoresHTML(r.scores, r.delta);
+    return;
+  }
+  if (role !== 'player') return;
+  const me = socket.id, mine = r.votes.find((v) => v.voterId === me), pts = r.delta[me] || 0;
+  let title;
+  if (r.author.id === me) title = r.fooledAll ? '¡Has engañado a todos! 😈' : 'Era tu respuesta 👀';
+  else if (!mine) title = 'No votaste a tiempo ⏰';
+  else title = mine.correct ? '¡Acertaste! 🎯' : 'Fallaste 😅';
+  show('v-p-result');
+  $('pr-title').textContent = title;
+  $('pr-sub').textContent = r.author.id === me ? 'Lo escribiste tú.' : `Lo escribió ${r.author.name}`;
+  $('pr-pts').textContent = pts ? `+${pts}` : '+0';
+  $('pr-scores').innerHTML = scoresHTML(r.scores, r.delta);
+});
+
+/* ───────────── Final ───────────── */
+socket.on('game:over', ({ ranking }) => {
+  clearInterval(timerInt);
+  show('v-over');
+  $('over-ranking').innerHTML = scoresHTML(ranking);
+  $('btn-again').hidden = role !== 'host';
+});
+</script>
+</body>
+</html>
